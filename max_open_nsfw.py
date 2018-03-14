@@ -1,31 +1,40 @@
 import keras
+import shutil
 from keras.models import Model
-from keras import layers
-import keras.backend as K
 from keras.preprocessing import image
 from keras.applications.imagenet_utils import preprocess_input
 from keras.models import model_from_json
 from os import walk, getcwd, path
 from time import time
+import numpy as np
+import sys
+import argparse
+from tqdm import tqdm
+
+vervose = False
+tiempo_inicial_proceso = time()
 
 
 def ls(ruta=getcwd()):
     listaarchivos = []
+    print('Buscando archivos... Por favor espere!')
     for (dir, _, archivos) in walk(ruta):
         listaarchivos.extend([path.join(dir, arch) for arch in archivos])
-    yield listaarchivos
-
-
-import numpy as np
-import sys
+    return listaarchivos
 
 
 def OpenNsfw(weight_file="max_open_nsfw.h5"):
+    if vervose:
+        print('\nCargando modelo...\n')
     json_file = open('max_open_nsfw.json', 'r')
     loaded_model_json = json_file.read()
     json_file.close()
     model = model_from_json(loaded_model_json)
+    if vervose:
+        print('\nModelo cargado...\nConfigurando modelo...\n')
     model.load_weights(weight_file)
+    if vervose:
+        print('\nModelo cargado y configurado!\n')
     return model
 
 
@@ -38,40 +47,67 @@ def isPorno(model, img_path):
     return preds[0][1]
 
 
-if __name__ == '__main__':
-    print('\nCargando modelo....\n')
-    tiempo_inicial = time()
+def procesarArchivo(img_path):
     model = OpenNsfw()
-    ruta = sys.argv[1]
-    print('\nModelo cargado con exito!\n Buscando Archivos...\n')
-    archivos = ls(ruta)
-    #print('Archivos encontrados: %1d Iniciando escaneo...\n' % (archivos.mro))
+    try:
+        resultado = 0.00
+        resultado = isPorno(model, img_path)
+        print('La probabilidad de que:\n', img_path,
+              '\nSea porno es de %.2f' % (resultado * 100), '%\n')
+    except(OSError, ValueError):
+        print(img_path, '\nNo es un archivo de imagen valido!\n')
+
+
+def procesarDirectorio(dir):
+    model = OpenNsfw()
     nroArchivo = 0
     errores = 0
-    tiempo_inicial_proceso = time()
-    for f in next(archivos):
+    files = ls(dir)
+    print('Examinando...\n')
+    for f in tqdm(files, total=len(files), unit=' archivos',leave=False):
         img_path = f
+        msg = ''
         nroArchivo = nroArchivo + 1
-        print('Escaneando archivo %2d... Tiempo: %.2f seg.' %
-              (nroArchivo, time() - tiempo_inicial))
         try:
-            resultado = 0.00
             resultado = isPorno(model, img_path)
-            print('La probabilidad de que:\n', img_path,
-                  '\nSea porno es de %.2f' % (resultado * 100), '%\n')
+            msg = 'Probabilidad: ' + str(round(resultado * 100, 2)) + ' %'
         except(OSError, ValueError):
-            print(img_path, '\nNo es un archivo de imagen valido!\n')
             errores = errores + 1
+            msg = 'No es un imagen valida!'
             continue
-        except:
-            print(img_path, '\nNo es un archivo de imagen valido!\n')
-            errores = errores + 1
-            continue
+        finally:
+            msg = '\r' + img_path + ' ' + msg  + '\r\f'
+            #print( msg,end='\f',flush=True)
+    print('\nTotal Archivos: ', nroArchivo)
+    print('Total Archivos invalidos: ', errores)
+    print('Total Imagenes Analizadas: ', nroArchivo - errores)
 
-    tiempo_final = time()
 
-    tiempo_total = tiempo_final - tiempo_inicial
-    tiempo_proceso = tiempo_final - tiempo_inicial_proceso
+if (__name__ == '__main__'):
 
-    print('Tiempo total: %.2f seg. ,Tiempo proceso: %.2f seg. ,Errores: %1d ,Total de images procesadas: %1d ,Total Archivos: %1d\n' % (
-        tiempo_total, tiempo_proceso, errores, nroArchivo - errores,  nroArchivo))
+    tiempo_inicial = time()
+    parser = argparse.ArgumentParser(
+        description='Detectar imagenes pornograficas.')
+    parser.add_argument('ruta', metavar='path',
+                        help='"Imagen" o Directorio a testear.')
+    parser.add_argument('-s', '--score', action='store_true',
+                        help='Reduce image size to increase speed of scanning')
+    parser.add_argument('-v', '--vervose', action='store_true',
+                        help='Mostrar detalles del proceso.')
+
+    args = parser.parse_args()
+
+    ruta = args.ruta
+    if(args.vervose):
+        vervose = True
+    if(path.isfile(ruta)):
+        procesarArchivo(ruta)
+    elif (path.isdir(ruta)):
+        procesarDirectorio(ruta)
+    else:
+        print('Archivo o Directorio incorrecto!')
+
+    tiempo_total = time() - tiempo_inicial
+    hs, min, seg = (abs(tiempo_total / 3600),
+                    abs(tiempo_total / 60), tiempo_total % 60)
+    print('\nTiempo total: %d:%d:%d h:m:s' % (hs, min, seg))
