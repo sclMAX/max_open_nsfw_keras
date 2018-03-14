@@ -63,21 +63,28 @@ def procesarDirectorio(dir):
     nroArchivo = 0
     errores = 0
     files = ls(dir)
-    print('Examinando...\n')
-    for f in tqdm(files, total=len(files), unit=' archivos',leave=False):
+    msg = ''
+    pbar = tqdm(
+        files,
+        total=len(files),
+        desc=' Examinando',
+        unit=' archivos',
+        leave=False,
+        dynamic_ncols=True
+    )
+    for f in pbar:
         img_path = f
-        msg = ''
         nroArchivo = nroArchivo + 1
         try:
             resultado = isPorno(model, img_path)
             msg = 'Probabilidad: ' + str(round(resultado * 100, 2)) + ' %'
         except(OSError, ValueError):
             errores = errores + 1
-            msg = 'No es un imagen valida!'
+            msg = 'No imagen valida!'
             continue
         finally:
-            msg = '\r' + img_path + ' ' + msg  + '\r\f'
-            #print( msg,end='\f',flush=True)
+            msg = msg + '\t' + img_path
+            pbar.write(msg)
     print('\nTotal Archivos: ', nroArchivo)
     print('Total Archivos invalidos: ', errores)
     print('Total Imagenes Analizadas: ', nroArchivo - errores)
